@@ -1,0 +1,31 @@
+# Google Cloud Configuration
+GOOGLE_CLOUD_PROJECT_ID=your-project-id
+GOOGLE_CLOUD_LOCATION=us-central1
+
+# Service Account Authentication
+GOOGLE_APPLICATION_CREDENTIALS=path/to/your/service-account-key.json
+
+# Vertex AI Vector Search Configuration
+VECTOR_INDEX_ID=your-vector-index-id
+VECTOR_ENDPOINT_ID=your-vector-endpoint-id
+
+# Embedding Model Configuration
+EMBEDDING_MODEL=textembedding-gecko@003
+EMBEDDING_BATCH_SIZE=100
+EMBEDDING_MAX_TOKENS=3072
+
+# Processing Configuration
+BATCH_SIZE=100
+MAX_RETRIES=3
+REQUEST_TIMEOUT=300
+
+# Optional: CMS Integration
+WORDPRESS_SITE_URL=https://your-wordpress-site.com
+WORDPRESS_USERNAME=your-username
+WORDPRESS_PASSWORD=your-application-password
+
+# Logging Configuration
+LOG_LEVEL=INFO
+
+# Web Scraping Configuration
+FIRECRAWL_API_KEY=your-firecrawl-api-key 
