@@ -1,8 +1,10 @@
 import os
 import sys
+import json
 from datetime import datetime
-from typing import List, Dict, Any, Optional, Callable
+from typing import List, Dict, Any, Optional, Callable, Union
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Add the project root and the 'turbo-firecrawl' directory to the sys.path
 # This allows importing modules from 'modules' and 'turbo-firecrawl'
@@ -15,10 +17,12 @@ from config import config
 from vector_search import VectorSearchManager
 from cms_integration import CMSIntegration, CMSConnector
 from firecrawl_scraper import EnhancedFirecrawlClient # Updated import path
+from firecrawl_scraper import setup_logging # Import the logger setup function
 
 # Configure logging
+logger = setup_logging(lang="es")
 logging.basicConfig(level=getattr(logging, config.log_level))
-logger = logging.getLogger(__name__)
+
 
 # --- Placeholder for a real PostgreSQL DB Connector ---
 # In a real scenario, this class would connect to your PostgreSQL database
@@ -33,328 +37,212 @@ class PostgreSQLConnector(CMSConnector):
         # Initialize your database connection/ORM session here
         # Example: self.engine = create_engine(config.database_url)
         # self.Session = sessionmaker(bind=self.engine)
-        logger.info("PostgreSQLConnector initialized (placeholder for real DB connection).")
-        self._simulated_data = self._load_simulated_data() # For demonstration
+        self.logger = logging.getLogger(__name__)
+        self.logger.info("PostgreSQLConnector initialized.")
 
     def connect(self) -> bool:
+        self.logger.info("Connecting to PostgreSQL...")
+        # Simulate connection
+        return True
+
+    def get_content(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        self.logger.info(f"Retrieving content from PostgreSQL (limit: {limit})...")
+        # In a real app, this would execute a SQL query and fetch results.
+        # Example dummy data
+        return [
+            {"id": "db_doc_1", "title": "PostgreSQL is great", "url": "https://www.postgresql.org", "text": "PostgreSQL is a powerful, open source object-relational database system.", "created_at": datetime.now().isoformat()},
+            {"id": "db_doc_2", "title": "PostgreSQL Features", "url": "https://www.postgresql.org/features/", "text": "PostgreSQL has a strong reputation for reliability, data integrity, and correctness.", "created_at": datetime.now().isoformat()}
+        ]
+
+    def get_content_by_id(self, content_id: Union[str, int]) -> Optional[Dict[str, Any]]:
+        self.logger.info(f"Retrieving content by ID from PostgreSQL: {content_id}")
+        # In a real app, this would query the database for a specific item.
+        return None
+        
+    def get_last_modified_content(self, last_sync: datetime) -> List[Dict[str, Any]]:
+        self.logger.info(f"Retrieving content modified since {last_sync} from PostgreSQL...")
+        # In a real app, this would execute a query to find recent updates.
+        return []
+
+
+# --- Firecrawl-based Scraper Connector ---
+class FirecrawlScraperConnector(CMSConnector):
+    """
+    A connector that uses the EnhancedFirecrawlClient to scrape web content.
+
+    This connector simulates fetching content from a 'CMS' by scraping a list of URLs
+    or performing a web search. It uses the improved `extract_url` and `search_and_extract_links`
+    methods from the `EnhancedFirecrawlClient`.
+    """
+    def __init__(self, api_keys: List[str]):
         """
-        Connects to the PostgreSQL database.
-        In a real scenario, this would test the database connection.
+        Initializes the connector with a list of Firecrawl API keys.
         """
-        try:
-            # Example: self.Session().connection()
-            logger.info("Successfully simulated connection to PostgreSQL database.")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to connect to PostgreSQL database: {e}")
-            return False
+        self.logger = logging.getLogger(__name__)
+        self.firecrawl_client = EnhancedFirecrawlClient(api_keys=api_keys, log_language="es")
+        self.logger.info("FirecrawlScraperConnector initialized.")
+        self.thread_pool = ThreadPoolExecutor(max_workers=5) # Use a thread pool for concurrent scraping
 
-    def _load_simulated_data(self) -> List[Dict[str, Any]]:
-        """
-        Loads simulated data representing content fetched from the PostgreSQL database.
-        This data structure mimics the output of the SQL query provided previously.
-        """
-        simulated_db_content = []
-
-        # Example data mimicking the SQL query output for various content types
-        simulated_db_content.append({
-            "id": "med_diagnostico_001",
-            "created_date": datetime(2023, 10, 20).isoformat(),
-            "last_modified": datetime(2023, 10, 26).isoformat(),
-            "content_name": "Herramientas para Examen Diagnóstico",
-            "content_description": "Estos MED contienen diferentes herramientas para que los docentes evalúen a sus alumnos, su escuela y su comunidad para lograr la lectura de la realidad necesaria para la NEM.",
-            "content_suggestion": "Ideal para el inicio del ciclo escolar para conocer a tu grupo.",
-            "image_url": "https://placehold.co/150x100/AEC6CF/000000?text=MED+Diagnóstico",
-            "external_url": "https://redmagisterial.com/meds?busqueda=Diagn%C3%B3stico",
-            "user_id": 101,
-            "downloads": 500,
-            "curricular_content_name": "Diagnóstico Inicial",
-            "formative_field_name": "Lenguaje y Comunicación",
-            "grade_name": "Primaria",
-            "level_name": "Básico",
-            "phase_name": "Fase 3",
-            "subject_name": "Español",
-            "learning_progression_name": "Evaluación formativa",
-            "type": "med" # Explicitly add type for processing
-        })
-
-        simulated_db_content.append({
-            "id": "tool_planea_magia_001",
-            "created_date": datetime(2024, 1, 1).isoformat(),
-            "last_modified": datetime(2024, 1, 5).isoformat(),
-            "content_name": "Generador de Planeaciones Red Magisterial",
-            "content_description": "El reconocido generador de planeaciones de Red Magisterial que es un aliado para docentes de todos los niveles de Educación Básica.",
-            "content_suggestion": "Crea tus planeaciones didácticas de forma rápida y eficiente.",
-            "image_url": "https://placehold.co/150x100/D4EDDA/000000?text=Planea+MagIA",
-            "external_url": "https://redmagisterial.com/red-magia/planea",
-            "user_id": 103,
-            "downloads": 1200,
-            "curricular_content_name": "Planeación Didáctica",
-            "formative_field_name": "Múltiples",
-            "grade_name": "Todos",
-            "level_name": "Todos",
-            "phase_name": "Todas",
-            "subject_name": "Todas",
-            "learning_progression_name": "Herramientas de apoyo",
-            "type": "tool"
-        })
-
-        simulated_db_content.append({
-            "id": "ai_assistant_nem_001",
-            "created_date": datetime(2024, 1, 25).isoformat(),
-            "last_modified": datetime(2024, 2, 1).isoformat(),
-            "content_name": "Asistente Todo sobre la NEM",
-            "content_description": "Un asistente de IA que ofrece respuestas para los docentes en torno a todos los conceptos fundamentales de la NEM y cómo se implementan en el aula.",
-            "content_suggestion": "Resuelve tus dudas sobre la Nueva Escuela Mexicana.",
-            "image_url": "https://placehold.co/150x100/C3E6CB/000000?text=Asistente+NEM",
-            "external_url": "https://redmagisterial.com/asistentes/todo-sobre-nem",
-            "user_id": 104,
-            "downloads": 800,
-            "curricular_content_name": "Nueva Escuela Mexicana",
-            "formative_field_name": "Múltiples",
-            "grade_name": "Todos",
-            "level_name": "Todos",
-            "phase_name": "Todas",
-            "subject_name": "Todas",
-            "learning_progression_name": "Asistencia IA",
-            "type": "ai_assistant"
-        })
-
-        simulated_db_content.append({
-            "id": "webinar_w111",
-            "created_date": datetime(2024, 2, 28).isoformat(),
-            "last_modified": datetime(2024, 3, 1).isoformat(),
-            "content_name": "W111 Del diagnóstico a la planeación multidisciplinaria en preescolar",
-            "content_description": "La aplicación de los principios de la Nueva Escuela Mexicana en las aulas es un reto para los docentes",
-            "content_suggestion": "Aprende a planear de forma multidisciplinaria en preescolar.",
-            "image_url": "https://placehold.co/150x100/B0E0E6/000000?text=Webinar+1",
-            "external_url": "https://redmagisterial.com/webinars/w111", # Fictitious URL
-            "user_id": 105,
-            "downloads": 300,
-            "curricular_content_name": "Diagnóstico y Planeación",
-            "formative_field_name": "Múltiples",
-            "grade_name": "Preescolar",
-            "level_name": "Básico",
-            "phase_name": "Fase 1",
-            "subject_name": "Múltiples",
-            "learning_progression_name": "Estrategias didácticas",
-            "type": "webinar"
-        })
-
-        logger.info("Simulated database content loaded.")
-        return simulated_db_content
+    def connect(self) -> bool:
+        # No explicit connection needed, as the client handles authentication per request.
+        self.logger.info("Firecrawl client is ready.")
+        return True
 
     def get_content(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """
-        Retrieves content from the CMS (simulating a DB query).
-        In a real scenario, this would execute the actual SQL query via an ORM.
+        Performs a web search and scrapes content from the top results.
+
+        This method is for demonstration purposes. In a real-world scenario, you might
+        provide a list of known URLs to scrape instead of a search query.
         """
-        logger.info(f"Executing SQL query to retrieve content (limit: {limit})...")
-        # Example of how you would execute the SQL query using an ORM:
-        # with self.Session() as session:
-        #     # Construct your ORM query based on the SQL provided previously
-        #     # e.g., query = session.query(YourContentModel).filter(...).order_by(...)
-        #     # if limit: query = query.limit(limit)
-        #     # results = query.all()
-        #     # content_items = [item.to_dict() for item in results] # Convert ORM objects to dicts
-        # return content_items
-
-        if limit:
-            return self._simulated_data[:limit]
-        return self._simulated_data
-
-    def get_content_by_id(self, content_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Retrieves a content item by ID (simulating a DB query).
-        """
-        logger.info(f"Searching for content by ID: {content_id} (simulating DB)...")
-        for item in self._simulated_data:
-            if item["id"] == content_id:
-                return item
-        return None
-
-    def get_updated_content(self, since: datetime) -> List[Dict[str, Any]]:
-        """
-        Retrieves content updated since a specific date (simulating a DB query).
-        """
-        logger.info(f"Searching for content updated since: {since} (simulating DB)...")
-        updated_items = []
-        for item in self._simulated_data:
-            item_modified_date = datetime.fromisoformat(item["last_modified"])
-            if item_modified_date > since:
-                updated_items.append(item)
-        return updated_items
-
-# --- Global Firecrawl Client Instance ---
-# This will be initialized once in run_ingestion_job
-firecrawl_client: Optional[EnhancedFirecrawlClient] = None
-
-def fetch_content_from_url_with_firecrawl(url: str) -> Optional[str]:
-    """
-    Extracts text content from a URL using the EnhancedFirecrawlClient.
-
-    Args:
-        url (str): The URL to scrape.
-
-    Returns:
-        Optional[str]: The scraped text content, or None if an error occurs.
-    """
-    global firecrawl_client
-    if not firecrawl_client:
-        logger.error("EnhancedFirecrawlClient is not initialized.")
-        return None
-    
-    logger.info(f"Extracting content from URL with Firecrawl: {url}")
-    return firecrawl_client.scrape_url(url)
-
-# --- Content Processing Function ---
-def red_magisterial_content_processor(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """
-    Processes a CMS content item to prepare it for the vector database.
-    Combines relevant text fields and structures metadata.
-    Attempts to fetch external URL content using Firecrawl.
-
-    Args:
-        item (Dict[str, Any]): The content item dictionary fetched from the CMS.
-
-    Returns:
-        Optional[Dict[str, Any]]: A processed document dictionary ready for vector
-                                  database insertion, or None if the item is invalid.
-    """
-    if not item:
-        return None
-
-    # Combine text fields for embedding
-    title = item.get('content_name', '')
-    description = item.get('content_description', '')
-    suggestion = item.get('content_suggestion', '')
-    
-    combined_content = f"Title: {title}\nDescription: {description}\nUsage Suggestion: {suggestion}".strip()
-
-    # If there's an external URL, try to extract additional content with Firecrawl
-    external_url = item.get('external_url')
-    if external_url:
-        try:
-            content_from_url = fetch_content_from_url_with_firecrawl(external_url)
-            if content_from_url:
-                combined_content += f"\n\nExternal URL Content: {content_from_url}"
-        except Exception as e:
-            logger.warning(f"Could not extract content from URL {external_url} with Firecrawl: {e}")
-
-    if not combined_content:
-        logger.warning(f"Skipping item {item.get('id', 'unknown')} - no textual content to embed.")
-        return None
-
-    # Structure metadata
-    metadata = {
-        'title': title,
-        'description': description,
-        'suggestion': suggestion,
-        'url': external_url,
-        'image_url': item.get('image_url', ''),
-        'type': item.get('type', 'general_content'), # Use 'type' from simulated data or default
-        'categories': [], # Will be populated with names from related tables
-        'last_modified': item.get('last_modified', datetime.utcnow().isoformat()),
-        'source': 'red_magisterial_cms_sync'
-    }
-    
-    # Add names from related tables to categories metadata
-    if item.get('curricular_content_name'):
-        metadata['categories'].append(item['curricular_content_name'])
-    if item.get('formative_field_name'):
-        metadata['categories'].append(item['formative_field_name'])
-    if item.get('grade_name'):
-        metadata['categories'].append(item['grade_name'])
-    if item.get('level_name'):
-        metadata['categories'].append(item['level_name'])
-    if item.get('phase_name'):
-        metadata['categories'].append(item['phase_name'])
-    if item.get('subject_name'):
-        metadata['categories'].append(item['subject_name'])
-    if item.get('learning_progression_name'):
-        metadata['categories'].append(item['learning_progression_name'])
-
-    # Remove duplicates in categories
-    metadata['categories'] = list(set(metadata['categories']))
-
-    return {
-        'id': item['id'],
-        'content': combined_content, # This is the text that will be embedded
-        'metadata': metadata
-    }
-
-# --- Main Ingestion Job Function ---
-def run_ingestion_job():
-    """
-    Executes the content ingestion job from Red Magisterial CMS
-    to Vertex AI Vector Search.
-    """
-    global firecrawl_client # Access the global variable
-
-    logger.info("Starting Red Magisterial content ingestion job...")
-
-    try:
-        # 1. Validate and set up the environment
-        config.validate()
-        config.setup_authentication()
-        logger.info("Vertex AI configuration validated and authentication established.")
-
-        # 2. Initialize EnhancedFirecrawlClient
-        firecrawl_api_key = os.getenv("FIRECRAWL_API_KEY") # Ensure this variable is in .env
-        if not firecrawl_api_key:
-            logger.error("FIRECRAWL_API_KEY not found in environment variables.")
-            raise ValueError("FIRECRAWL_API_KEY is required for URL scraping.")
+        self.logger.info(f"Retrieving content using Firecrawl (limit: {limit})...")
         
-        # You can pass a list of keys if you have multiple for rotation
-        # The log_language parameter can be set to "es" for Spanish logs in the scraper
-        firecrawl_client = EnhancedFirecrawlClient(api_keys=[firecrawl_api_key], log_language="en")
-        logger.info("EnhancedFirecrawlClient initialized.")
-
-        # 3. Initialize VectorSearchManager and CMSIntegration
-        vector_manager = VectorSearchManager()
-        cms_integration = CMSIntegration(vector_manager)
-        logger.info("VectorSearchManager and CMSIntegration initialized.")
-
-        # 4. Initialize the Red Magisterial CMS connector (PostgreSQLConnector placeholder)
-        red_magisterial_connector = PostgreSQLConnector()
+        # This part simulates a content source by searching for a topic.
+        search_query = "Mejores prácticas de salud mental"
+        search_results = self.firecrawl_client.search_and_extract_links(query=search_query, num_results=limit or 10)
         
-        # 5. Perform the initial content migration
-        logger.info("Starting initial content migration...")
-        migration_results = cms_integration.migrate_content(
-            cms_connector=red_magisterial_connector,
-            content_processor=red_magisterial_content_processor,
-            batch_size=config.batch_size # Use batch size from config
-        )
+        if not search_results:
+            self.logger.error("No se encontraron resultados de búsqueda para poblar la base de datos.")
+            return []
 
-        if migration_results["success"]:
-            logger.info(
-                f"Initial migration completed successfully. "
-                f"Documents inserted: {migration_results['successful_insertions']}"
-            )
-            logger.info(f"Failed documents: {migration_results['failed_insertions']}")
+        content_items = []
+        future_to_url = {
+            self.thread_pool.submit(self.firecrawl_client.extract_url, item['url']): item for item in search_results
+        }
+        
+        for future in as_completed(future_to_url):
+            url_item = future_to_url[future]
+            url = url_item['url']
+            try:
+                content = future.result()
+                if content:
+                    content_items.append({
+                        "id": url,
+                        "title": url_item.get('title', url),
+                        "url": url,
+                        "text": content,
+                        "created_at": datetime.now().isoformat()
+                    })
+            except Exception as e:
+                self.logger.error(f"Error al procesar la URL {url}: {e}")
+        
+        self.logger.info(f"Scraping completado: Se obtuvieron {len(content_items)} elementos de contenido.")
+        return content_items
+
+    def get_content_by_id(self, content_id: Union[str, int]) -> Optional[Dict[str, Any]]:
+        """
+        Scrapes a single URL identified by the content_id.
+        """
+        self.logger.info(f"Retrieving content by ID using Firecrawl: {content_id}")
+        if not isinstance(content_id, str):
+            self.logger.error("ID de contenido inválido. Debe ser una URL.")
+            return None
+        
+        content = self.firecrawl_client.extract_url(content_id)
+        if content:
+            self.logger.info(f"Contenido obtenido para la URL: {content_id}")
+            return {
+                "id": content_id,
+                "title": content_id, # Can't get title from URL alone, so use the URL
+                "url": content_id,
+                "text": content,
+                "created_at": datetime.now().isoformat()
+            }
         else:
-            logger.error(f"Initial migration failed: {migration_results['error']}")
-            return
+            self.logger.warning(f"No se pudo obtener contenido para la URL: {content_id}")
+            return None
 
-        # 6. Simulate an update synchronization (for periodic execution)
-        last_sync_time = datetime.utcnow()
-        logger.info(f"Simulating next synchronization from: {last_sync_time}")
+    def get_last_modified_content(self, last_sync: datetime) -> List[Dict[str, Any]]:
+        # This connector does not support tracking last modified dates easily.
+        self.logger.warning("Este conector no soporta la funcionalidad de 'última modificación'.")
+        return []
 
-        # In a real production environment, you would call cms_integration.sync_updates here
-        # sync_results = cms_integration.sync_updates(
-        #     cms_connector=red_magisterial_connector,
-        #     last_sync=last_sync_time,
-        #     content_processor=red_magisterial_content_processor
-        # )
-        # if sync_results["success"]:
-        #     logger.info(f"Update synchronization completed. Documents updated: {sync_results['updates']}")
-        # else:
-        #     logger.error(f"Update synchronization failed: {sync_results['error']}")
 
-        logger.info("Content ingestion job finished.")
+class MigrationJob:
+    """
+    Handles the end-to-end process of migrating content to the vector database.
+    """
+    def __init__(self, connector: CMSConnector, vector_manager: VectorSearchManager):
+        """
+        Initializes the migration job.
 
-    except Exception as e:
-        logger.critical(f"Critical error in ingestion job: {e}", exc_info=True)
+        Args:
+            connector (CMSConnector): An instance of a CMS connector.
+            vector_manager (VectorSearchManager): An instance of the vector search manager.
+        """
+        self.connector = connector
+        self.vector_manager = vector_manager
+        
+    def _prepare_documents(self, content_items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """
+        Prepares content items for vector search insertion.
+        """
+        documents = []
+        for item in content_items:
+            doc_id = item.get("id") or item.get("url")
+            if not doc_id:
+                logger.warning(f"Skipping item due to missing ID or URL: {item}")
+                continue
+
+            # This is a critical step: create the text to be embedded.
+            # Combine the title, description, and text to create a rich document.
+            text_to_embed = f"Title: {item.get('title', '')}\n\nDescription: {item.get('description', '')}\n\nContent: {item.get('text', '')}"
+            
+            documents.append({
+                "id": str(doc_id),
+                "content": text_to_embed,
+                "metadata": {
+                    "source": "web_scraper",
+                    "original_url": item.get('url', ''),
+                    "title": item.get('title', ''),
+                    "last_sync": datetime.now().isoformat()
+                }
+            })
+        return documents
+
+    def run_migration(self, batch_size: int = 100) -> Dict[str, Any]:
+        """
+        Executes the content migration process.
+        """
+        try:
+            logger.info("Starting content migration job...")
+
+            # 1. Connect to CMS (or content source)
+            if not self.connector.connect():
+                logger.error("Failed to connect to the content source.")
+                return {"success": False, "error": "Connection failed"}
+
+            # 2. Retrieve content
+            content_items = self.connector.get_content()
+            if not content_items:
+                logger.warning("No content items to process. Exiting.")
+                return {"success": True, "updates": 0, "total_updated_items": 0}
+
+            # 3. Prepare documents for vector search
+            documents = self._prepare_documents(content_items)
+
+            # 4. Upsert documents into the vector database
+            results = self.vector_manager.upsert_documents_batch(documents, batch_size)
+            
+            # 5. Calculate statistics
+            successful = len([r for r in results.values() if r])
+            failed = len(results) - successful
+            
+            migration_stats = {
+                "success": True,
+                "total_content_items": len(content_items),
+                "total_documents": len(documents),
+                "successful_insertions": successful,
+                "failed_insertions": failed,
+                "results": results
+            }
+            
+            logger.info(f"Migration completed: {successful} successful, {failed} failed")
+            return migration_stats
+            
+        except Exception as e:
+            logger.error(f"Migration failed: {e}")
+            return {"success": False, "error": str(e)}
 
 if __name__ == "__main__":
     # To run this script, ensure your environment variables (in a .env file)
@@ -364,11 +252,32 @@ if __name__ == "__main__":
     # GOOGLE_APPLICATION_CREDENTIALS=path/to/your/service-account-key.json
     # VECTOR_INDEX_ID=your-vector-index-id
     # EMBEDDING_MODEL=textembedding-gecko@003
-    # FIRECRAWL_API_KEY=your-firecrawl-api-key
+    # FIRECRAWL_API_KEYS="your-firecrawl-key-1,your-firecrawl-key-2"
     # LOG_LEVEL=INFO (e.g., DEBUG, INFO, WARNING, ERROR, CRITICAL)
 
     # And that the libraries from `requirements.txt` are installed:
     # pip install -r requirements.txt
-    # pip install firecrawl-py # Ensure Firecrawl is installed
+    # pip install firecrawl-py
 
-    run_ingestion_job()
+    # Use the FirecrawlScraperConnector to ingest data from the web.
+    try:
+        # Get the API keys from environment variables
+        firecrawl_keys = os.getenv("FIRECRAWL_API_KEYS")
+        if not firecrawl_keys:
+            raise ValueError("FIRECRAWL_API_KEYS environment variable is not set.")
+        
+        api_keys_list = [key.strip() for key in firecrawl_keys.split(',')]
+        
+        # Initialize components
+        firecrawl_connector = FirecrawlScraperConnector(api_keys=api_keys_list)
+        vector_search_manager = VectorSearchManager()
+        
+        # Initialize and run the migration job
+        job = MigrationJob(connector=firecrawl_connector, vector_manager=vector_search_manager)
+        migration_results = job.run_migration(batch_size=config.batch_size)
+        
+        print("\n=== Resultado de la migración ===")
+        print(json.dumps(migration_results, indent=2, ensure_ascii=False))
+
+    except Exception as e:
+        logger.error(f"Error fatal al ejecutar el trabajo de migración: {e}")

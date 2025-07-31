@@ -5,7 +5,7 @@ import time
 import random
 import re
 import threading
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Callable
 from urllib.parse import urlparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -315,34 +315,34 @@ class EnhancedFirecrawlClient:
         
         raise Exception(f"Failed after {max_retries} attempts: {str(last_error)}")
 
-    def scrape_url(self, url: str) -> Optional[str]:
+    def extract_url(self, url: str) -> Optional[str]:
         """
-        Scrapes content from a single URL.
+        Extracts clean content from a single URL using Firecrawl's extract method.
 
         Args:
-            url (str): The URL of the page to scrape.
+            url (str): The URL of the page to extract content from.
 
         Returns:
-            Optional[str]: The raw content of the page as a string, or None if scraping fails.
+            Optional[str]: The cleaned content of the page as a string, or None if extraction fails.
         """
         try:
             if not self._validate_url(url):
-                self.logger.error(f"Invalid URL provided for scraping: {url}")
+                self.logger.error(f"Invalid URL provided for extraction: {url}")
                 return None
 
             response = self._execute_with_retry(
-                self.firecrawl_app.scrape,
+                self.firecrawl_app.extract_url,
                 url=url
             )
             
             if response and 'content' in response:
-                self.logger.info(f"Scraping successful for: {url}")
+                self.logger.info(f"Extraction successful for: {url}")
                 return response['content']
             else:
                 self.logger.warning(f"Could not retrieve content from URL: {url}")
                 return None
         except Exception as e:
-            self.logger.error(f"Error during scraping of URL {url}: {e}")
+            self.logger.error(f"Error during extraction of URL {url}: {e}")
             return None
 
     def extract_structured_data(self, urls: List[str], prompt: str) -> Optional[Dict[str, Any]]:
@@ -385,39 +385,61 @@ class EnhancedFirecrawlClient:
             self.logger.error(f"Error during structured extraction from URLs {urls}: {e}")
             return None
 
-    def search_and_scrape(self, query: str, num_pages: int = 1) -> List[Dict[str, Any]]:
+    def search_and_extract_links(self, query: str, num_results: int = 10) -> List[Dict[str, Any]]:
         """
-        Performs a web search and scrapes content from the results.
+        Performs a Google web search for the given query and uses Firecrawl's extract
+        feature to get links and snippets from the search results page.
+
+        This method avoids using firecrawl.search() directly, instead leveraging
+        firecrawl.extract() on a constructed Google search URL.
 
         Args:
             query (str): The search query.
-            num_pages (int): The number of search result pages to process. Defaults to 1.
+            num_results (int): The approximate number of search results to aim for
+                                (this influences the Google search URL parameter). Defaults to 10.
 
         Returns:
-            List[Dict[str, Any]]: A list of dictionaries, each with 'url' and 'content'
-                                  from the scraped search results. Returns an empty list if failed.
+            List[Dict[str, Any]]: A list of dictionaries, each containing 'title', 'url',
+                                  and 'snippet' for the extracted search results.
+                                  Returns an empty list if no results are found or extraction fails.
         """
         try:
-            # Firecrawl's .search() method directly performs search and scrapes
-            response = self._execute_with_retry(
-                self.firecrawl_app.search,
-                query=query,
-                page_limit=num_pages
-            )
+            # Construct Google search URL
+            google_search_url = f"https://www.google.com/search?q={query.replace(' ', '+')}&num={num_results}"
+            self.logger.info(f"Constructed Google Search URL: {google_search_url}")
 
-            results = []
-            if response and isinstance(response, list):
-                for item in response:
-                    if 'url' in item and 'content' in item:
-                        results.append({
-                            'url': item['url'],
-                            'content': item['content']
-                        })
-                self.logger.info(f"Search and scraping successful for query: '{query}'. Obtained {len(results)} results.")
+            # Prompt to extract links and snippets from the Google search results page
+            extraction_prompt = """
+            Extract the title, URL, and a brief snippet for each main search result on this Google search results page.
+            Ignore ads, "People also ask" sections, image results, video results, and news carousels.
+            Focus only on the organic search results.
+
+            Return the data as a JSON array of objects, where each object has 'title', 'url', and 'snippet'.
+            Example:
+            [
+                {
+                    "title": "Example Title 1",
+                    "url": "https://example.com/page1",
+                    "snippet": "A brief description of example page 1."
+                },
+                {
+                    "title": "Example Title 2",
+                    "url": "https://example.com/page2",
+                    "snippet": "Another brief description of example page 2."
+                }
+            ]
+            """
+            
+            # Use extract_structured_data on the Google search URL
+            extracted_data = self.extract_structured_data(urls=[google_search_url], prompt=extraction_prompt)
+
+            if extracted_data and isinstance(extracted_data, list):
+                self.logger.info(f"Successfully extracted {len(extracted_data)} links from Google search results for query: '{query}'.")
+                return extracted_data
             else:
-                self.logger.warning(f"No search results obtained for query: '{query}'")
-            return results
+                self.logger.warning(f"No structured links found on Google search results for query: '{query}'. Extracted data: {extracted_data}")
+                return []
         except Exception as e:
-            self.logger.error(f"Error during search and scraping for query '{query}': {e}")
+            self.logger.error(f"Error during search and link extraction for query '{query}': {e}")
             return []
 
