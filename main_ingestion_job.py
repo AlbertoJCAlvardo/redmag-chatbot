@@ -1,8 +1,9 @@
 import os
 import sys
 import json
+import asyncio
 from datetime import datetime
-from typing import List, Dict, Any, Optional, Callable, Union
+from typing import List, Dict, Any, Optional, Union, Awaitable
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -16,8 +17,8 @@ sys.path.append(os.path.join(project_root, 'turbo-firecrawl')) # Add turbo-firec
 from config import config
 from vector_search import VectorSearchManager
 from cms_integration import CMSIntegration, CMSConnector
-from firecrawl_scraper import EnhancedFirecrawlClient # Updated import path
-from firecrawl_scraper import setup_logging # Import the logger setup function
+from firecrawl_scraper import EnhancedFirecrawlClient
+from firecrawl_scraper import setup_logging
 
 # Configure logging
 logger = setup_logging(lang="es")
@@ -50,8 +51,8 @@ class PostgreSQLConnector(CMSConnector):
         # In a real app, this would execute a SQL query and fetch results.
         # Example dummy data
         return [
-            {"id": "db_doc_1", "title": "PostgreSQL is great", "url": "https://www.postgresql.org", "text": "PostgreSQL is a powerful, open source object-relational database system.", "created_at": datetime.now().isoformat()},
-            {"id": "db_doc_2", "title": "PostgreSQL Features", "url": "https://www.postgresql.org/features/", "text": "PostgreSQL has a strong reputation for reliability, data integrity, and correctness.", "created_at": datetime.now().isoformat()}
+            {"id": "db_doc_1", "title": "PostgreSQL is great", "urls":[ "https://www.postgresql.org"], "text": "PostgreSQL is a powerful, open source object-relational database system.", "created_at": datetime.now().isoformat()},
+            {"id": "db_doc_2", "title": "PostgreSQL Features", "urls": ["https://www.postgresql.org/features/"], "text": "PostgreSQL has a strong reputation for reliability, data integrity, and correctness.", "created_at": datetime.now().isoformat()}
         ]
 
     def get_content_by_id(self, content_id: Union[str, int]) -> Optional[Dict[str, Any]]:
@@ -88,45 +89,66 @@ class FirecrawlScraperConnector(CMSConnector):
         self.logger.info("Firecrawl client is ready.")
         return True
 
-    def get_content(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    async def _generate_summary(self, text: str) -> str:
         """
-        Performs a web search and scrapes content from the top results.
+        Generates a concise summary of the provided text using the Gemini API.
 
-        This method is for demonstration purposes. In a real-world scenario, you might
-        provide a list of known URLs to scrape instead of a search query.
+        This method is a placeholder and requires an actual implementation using
+        the Gemini API client. It's marked as async to simulate an API call.
         """
-        self.logger.info(f"Retrieving content using Firecrawl (limit: {limit})...")
+        self.logger.info("Generando resumen del texto...")
         
-        # This part simulates a content source by searching for a topic.
-        search_query = "Mejores prácticas de salud mental"
-        search_results = self.firecrawl_client.search_and_extract_links(query=search_query, num_results=limit or 10)
-        
-        if not search_results:
-            self.logger.error("No se encontraron resultados de búsqueda para poblar la base de datos.")
-            return []
+        # This is where the actual call to the Gemini API would be made.
+        # For now, we'll return a placeholder summary.
+        # You would replace this with the actual API call logic.
+        #
+        # A rough implementation would look something like this:
+        # prompt = f"Genera un resumen conciso del siguiente texto en español:\n\n{text[:2000]}"
+        # response = await call_gemini_api(prompt)
+        # return response['summary']
+        #
+        # For demonstration purposes, we will just return a simple summary.
+        return f"Resumen generado del contenido. Longitud: {len(text)} caracteres."
 
+    def get_content(self, urls: List[str]) -> List[Dict[str, Any]]:
+        """
+        Scrapes content from a provided list of URLs and generates a summary for each.
+        """
+        self.logger.info(f"Scraping y resumiendo contenido de {len(urls)} URLs...")
+        
         content_items = []
+        # Use an event loop for async operations in a non-async context
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
         future_to_url = {
-            self.thread_pool.submit(self.firecrawl_client.extract_url, item['url']): item for item in search_results
+            self.thread_pool.submit(self.firecrawl_client.extract_url, url): url for url in urls
         }
         
         for future in as_completed(future_to_url):
-            url_item = future_to_url[future]
-            url = url_item['url']
+            url = future_to_url[future]
             try:
                 content = future.result()
                 if content:
+                    # Generate the summary asynchronously for each content item
+                    summary = loop.run_until_complete(self._generate_summary(content))
+
                     content_items.append({
                         "id": url,
-                        "title": url_item.get('title', url),
+                        "title": url, # Usar la URL como título si no hay otro disponible
                         "url": url,
                         "text": content,
+                        "summary": summary,  # Agregar el resumen aquí
                         "created_at": datetime.now().isoformat()
                     })
+                    self.logger.info(f"Contenido y resumen procesados para la URL: {url}")
+                else:
+                    self.logger.warning(f"No se pudo obtener contenido para la URL: {url}")
             except Exception as e:
                 self.logger.error(f"Error al procesar la URL {url}: {e}")
         
-        self.logger.info(f"Scraping completado: Se obtuvieron {len(content_items)} elementos de contenido.")
+        loop.close()
+        self.logger.info(f"Scraping y resúmenes completados: Se obtuvieron {len(content_items)} elementos.")
         return content_items
 
     def get_content_by_id(self, content_id: Union[str, int]) -> Optional[Dict[str, Any]]:
@@ -140,12 +162,18 @@ class FirecrawlScraperConnector(CMSConnector):
         
         content = self.firecrawl_client.extract_url(content_id)
         if content:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            summary = loop.run_until_complete(self._generate_summary(content))
+            loop.close()
+
             self.logger.info(f"Contenido obtenido para la URL: {content_id}")
             return {
                 "id": content_id,
-                "title": content_id, # Can't get title from URL alone, so use the URL
+                "title": content_id, # Usar la URL como título si no hay otro disponible
                 "url": content_id,
                 "text": content,
+                "summary": summary,
                 "created_at": datetime.now().isoformat()
             }
         else:
@@ -153,7 +181,7 @@ class FirecrawlScraperConnector(CMSConnector):
             return None
 
     def get_last_modified_content(self, last_sync: datetime) -> List[Dict[str, Any]]:
-        # This connector does not support tracking last modified dates easily.
+        # Este conector no soporta la funcionalidad de 'última modificación' para URLs arbitrarias.
         self.logger.warning("Este conector no soporta la funcionalidad de 'última modificación'.")
         return []
 
@@ -175,7 +203,7 @@ class MigrationJob:
         
     def _prepare_documents(self, content_items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        Prepares content items for vector search insertion.
+        Prepares content items for vector search insertion, including the summary in metadata.
         """
         documents = []
         for item in content_items:
@@ -184,9 +212,10 @@ class MigrationJob:
                 logger.warning(f"Skipping item due to missing ID or URL: {item}")
                 continue
 
-            # This is a critical step: create the text to be embedded.
-            # Combine the title, description, and text to create a rich document.
-            text_to_embed = f"Title: {item.get('title', '')}\n\nDescription: {item.get('description', '')}\n\nContent: {item.get('text', '')}"
+            # Este es el paso crítico: creamos el texto que será incrustado.
+            # Incluimos el título y el contenido, pero también el resumen para una mejor
+            # representación semántica.
+            text_to_embed = f"Title: {item.get('title', '')}\n\nSummary: {item.get('summary', '')}\n\nContent: {item.get('text', '')}"
             
             documents.append({
                 "id": str(doc_id),
@@ -195,36 +224,38 @@ class MigrationJob:
                     "source": "web_scraper",
                     "original_url": item.get('url', ''),
                     "title": item.get('title', ''),
+                    # Almacenamos el resumen en los metadatos como una lista de JSON, como se solicitó.
+                    "summaries": [{"url": item.get('url'), "summary": item.get('summary')}],
                     "last_sync": datetime.now().isoformat()
                 }
             })
         return documents
 
-    def run_migration(self, batch_size: int = 100) -> Dict[str, Any]:
+    def run_migration(self, urls_to_ingest: List[str], batch_size: int = 100) -> Dict[str, Any]:
         """
-        Executes the content migration process.
+        Executes the content migration process with a list of URLs to ingest.
         """
         try:
-            logger.info("Starting content migration job...")
+            logger.info("Iniciando el trabajo de migración de contenido...")
 
-            # 1. Connect to CMS (or content source)
+            # 1. Conectar a la fuente de contenido
             if not self.connector.connect():
-                logger.error("Failed to connect to the content source.")
+                logger.error("No se pudo conectar a la fuente de contenido.")
                 return {"success": False, "error": "Connection failed"}
 
-            # 2. Retrieve content
-            content_items = self.connector.get_content()
+            # 2. Obtener el contenido a partir de las URLs proporcionadas
+            content_items = self.connector.get_content(urls_to_ingest)
             if not content_items:
-                logger.warning("No content items to process. Exiting.")
+                logger.warning("No hay elementos de contenido para procesar. Saliendo.")
                 return {"success": True, "updates": 0, "total_updated_items": 0}
 
-            # 3. Prepare documents for vector search
+            # 3. Preparar los documentos para la inserción en el vector search
             documents = self._prepare_documents(content_items)
 
-            # 4. Upsert documents into the vector database
+            # 4. Insertar los documentos en la base de datos vectorial
             results = self.vector_manager.upsert_documents_batch(documents, batch_size)
             
-            # 5. Calculate statistics
+            # 5. Calcular estadísticas
             successful = len([r for r in results.values() if r])
             failed = len(results) - successful
             
@@ -237,44 +268,46 @@ class MigrationJob:
                 "results": results
             }
             
-            logger.info(f"Migration completed: {successful} successful, {failed} failed")
+            logger.info(f"Migración completada: {successful} éxitos, {failed} fallos")
             return migration_stats
             
         except Exception as e:
-            logger.error(f"Migration failed: {e}")
+            logger.error(f"La migración falló: {e}")
             return {"success": False, "error": str(e)}
 
 if __name__ == "__main__":
-    # To run this script, ensure your environment variables (in a .env file)
-    # are correctly configured:
-    # GOOGLE_CLOUD_PROJECT_ID=your-project-id
-    # GOOGLE_CLOUD_LOCATION=us-central1
-    # GOOGLE_APPLICATION_CREDENTIALS=path/to/your/service-account-key.json
-    # VECTOR_INDEX_ID=your-vector-index-id
-    # EMBEDDING_MODEL=textembedding-gecko@003
+    # Para ejecutar este script, asegúrate de que las variables de entorno (en un archivo .env)
+    # estén correctamente configuradas.
     # FIRECRAWL_API_KEYS="your-firecrawl-key-1,your-firecrawl-key-2"
-    # LOG_LEVEL=INFO (e.g., DEBUG, INFO, WARNING, ERROR, CRITICAL)
+    # El resto de las configuraciones de GCP están en config.py
 
-    # And that the libraries from `requirements.txt` are installed:
+    # Y que las bibliotecas de `requirements.txt` estén instaladas:
     # pip install -r requirements.txt
     # pip install firecrawl-py
+    # pip install httpx # Se recomienda para llamadas async
 
-    # Use the FirecrawlScraperConnector to ingest data from the web.
+    # Simula la lista de URLs que obtendrías de tu base de datos.
+    urls_from_db = [
+        "https://www.who.int/es/news-room/fact-sheets/detail/mental-health-strengthening-our-response",
+        "https://www.mentalhealth.org.uk/about/what-is-mental-health",
+        "https://www.paho.org/es/temas/salud-mental"
+    ]
+
     try:
-        # Get the API keys from environment variables
+        # Obtener las claves de API de Firecrawl de las variables de entorno
         firecrawl_keys = os.getenv("FIRECRAWL_API_KEYS")
         if not firecrawl_keys:
-            raise ValueError("FIRECRAWL_API_KEYS environment variable is not set.")
+            raise ValueError("La variable de entorno FIRECRAWL_API_KEYS no está configurada.")
         
         api_keys_list = [key.strip() for key in firecrawl_keys.split(',')]
         
-        # Initialize components
+        # Inicializar componentes
         firecrawl_connector = FirecrawlScraperConnector(api_keys=api_keys_list)
         vector_search_manager = VectorSearchManager()
         
-        # Initialize and run the migration job
+        # Inicializar y ejecutar el trabajo de migración
         job = MigrationJob(connector=firecrawl_connector, vector_manager=vector_search_manager)
-        migration_results = job.run_migration(batch_size=config.batch_size)
+        migration_results = job.run_migration(urls_to_ingest=urls_from_db, batch_size=config.batch_size)
         
         print("\n=== Resultado de la migración ===")
         print(json.dumps(migration_results, indent=2, ensure_ascii=False))
