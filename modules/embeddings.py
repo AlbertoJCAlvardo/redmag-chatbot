@@ -13,7 +13,7 @@ import numpy as np
 from google.cloud import aiplatform
 from google.api_core import retry
 
-from config import config
+from .config import config
 
 # Configure logging
 logging.basicConfig(level=getattr(logging, config.log_level))
