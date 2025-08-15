@@ -1,0 +1,11 @@
+{
+    "conversation_id": "550e8400-e29b-41d4-a716-446655440000",
+    "response_type": "text_input",
+    "data": {
+        "message": "Excelente elección, señor. Permítame asistirle con su consulta personalizada.\n\nPor favor, escriba su pregunta o solicitud específica y haré todo lo posible \npor brindarle la mejor asistencia posible.",
+        "placeholder": "Escriba su consulta aquí...",
+        "personality": "jarvis",
+        "waiting_for_input": true
+    },
+    "timestamp": "2024-01-15T10:35:00Z"
+}

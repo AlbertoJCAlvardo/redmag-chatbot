@@ -1,0 +1,56 @@
+[
+    {
+        "type": "buttons",
+        "data": {
+            "buttons": [
+                {
+                    "field_name": "Campo requerido para la intención ej. nivel",
+                    "options": [
+                        {
+                            "label": "Opción 1",
+                            "value": "opcion1"
+                        },
+                        {
+                            "label": "Opción 2",
+                            "value": "opcion2"
+                        }
+                    ]
+                },
+                {
+                    "field_name": "ej. grado",
+                    "options": [
+                        {
+                            "label": "Opción 1",
+                            "value": "opcion1"
+                        },
+                        {
+                            "label": "Opción 2",
+                            "value": "opcion2"
+                        }
+                    ]
+                }
+            ]
+        }
+    },
+    {
+        "type": "text",
+        "data": {
+            "text": "Dime en que nivel educativo trabajas"
+        }
+    },
+    {
+        "type": "content_cards",
+        "data": {
+            "content_cards": [
+                {
+                    "content_type": "med",
+                    "id": "1234567890"
+                },
+                {
+                    "content_type": "planeation",
+                    "id": "1234567890"
+                }
+            ]
+        }
+    }
+]

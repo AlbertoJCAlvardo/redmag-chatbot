@@ -1,0 +1,52 @@
+{
+    "conversation_id": "550e8400-e29b-41d4-a716-446655440000",
+    "response_type": "welcome",
+    "data": {
+        "message": "¡Bienvenido, Docente! Soy MentorIA, su asistente educativo personal.\n\nComo su fiel asistente, estoy aquí para ayudarle con todas sus necesidades educativas. \nHe sido programado para ser su compañero en esta noble misión de educar.\n\n¿En qué puedo asistirle hoy?",
+        "options": [
+            {
+                "label": "📚 Ayuda con Planeaciones",
+                "value": "planeaciones",
+                "description": "Crear y mejorar planeaciones didácticas"
+            },
+            {
+                "label": "📖 Materiales Educativos (MEDs)",
+                "value": "meds",
+                "description": "Buscar y crear materiales educativos"
+            },
+            {
+                "label": "🎯 Evaluación y Diagnóstico",
+                "value": "evaluacion",
+                "description": "Herramientas de evaluación y diagnóstico educativo"
+            },
+            {
+                "label": "🔧 Metodologías de Enseñanza",
+                "value": "metodologias",
+                "description": "Estrategias y metodologías pedagógicas"
+            },
+            {
+                "label": "📋 Programas Analíticos",
+                "value": "programas",
+                "description": "Ayuda con programas analíticos y secuencias"
+            },
+            {
+                "label": "❓ Preguntas Generales",
+                "value": "general",
+                "description": "Consultas generales sobre educación"
+            },
+            {
+                "label": "⚙️ Configurar Perfil",
+                "value": "perfil",
+                "description": "Actualizar información de su perfil"
+            },
+            {
+                "label": "✍️ Escribir Consulta Personalizada",
+                "value": "otro",
+                "description": "Escribir su consulta específica directamente"
+            }
+        ],
+        "personality": "jarvis",
+        "show_typing": true
+    },
+    "timestamp": "2024-01-15T10:30:00Z"
+}
